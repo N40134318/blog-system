@@ -4,16 +4,14 @@ declare const process: {
 
 export default defineNuxtConfig({
     css: ['@/assets/css/main.css'],
-
     runtimeConfig: {
         public: {
             appName:
                 process.env.NUXT_PUBLIC_APP_NAME || 'Rainstorm Dev Platform',
             apiBase:
-                process.env.NUXT_PUBLIC_API_BASE || 'https://dev.rainstorm.space'
+                process.env.NUXT_PUBLIC_API_BASE || '/api'
         }
     },
-
     routeRules: {
         '/dashboard': { ssr: false },
         '/dashboard/**': { ssr: false },
@@ -23,15 +21,13 @@ export default defineNuxtConfig({
         '/login': { ssr: false },
         '/register': { ssr: false }
     },
-
     vite: {
         server: {
-            allowedHosts: ['dev.rainstorm.space']
+            allowedHosts: ['dev.rainstorm.space', 'preview.rainstorm.space']
         },
         optimizeDeps: {
             include: ['markdown-it', 'highlight.js']
         }
     },
-
     modules: ['@nuxtjs/tailwindcss']
 })
