@@ -1,0 +1,23 @@
+# frontend
+frontend/node_modules
+frontend/.output
+frontend/.nuxt
+frontend/dist
+frontend/.pnpm-store
+
+# backend
+backend/target
+backend/*.jar
+
+# env
+.env
+.env.*
+!.env.example
+
+# logs
+*.log
+
+# IDE
+.idea
+.vscode
+.DS_Store

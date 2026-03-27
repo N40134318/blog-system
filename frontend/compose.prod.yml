@@ -1,0 +1,12 @@
+services:
+  frontend:
+    image: blog-frontend:prod
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: blog-frontend-prod
+    restart: always
+    env_file:
+      - .env.prod
+    ports:
+      - "127.0.0.1:3000:3000"

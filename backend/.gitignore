@@ -1,0 +1,38 @@
+# Build
+target/
+build/
+
+# Logs
+logs/
+*.log
+
+# Temp
+tmp/
+temp/
+
+# JVM crash
+hs_err_pid*
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Uploads
+uploads/
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# Maven
+.mvn/wrapper/maven-wrapper.jar
+
+# OS
+.DS_Store
+
+# 测试脚本
+*.sh

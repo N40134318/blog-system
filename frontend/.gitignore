@@ -1,0 +1,30 @@
+# Nuxt
+.nuxt
+.nuxt*
+.output
+.nitro
+.cache
+.data
+dist
+
+# Vite
+node_modules/.vite
+
+# Dependencies
+node_modules
+.pnpm-store/
+
+# Logs
+logs
+*.log
+
+# Env
+.env
+.env.*
+!.env.example
+
+# IDE
+.DS_Store
+.idea
+.fleet
+.vscode/
