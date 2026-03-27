@@ -4,34 +4,39 @@
 
 - `frontend/`：Nuxt 前端
 - `backend/`：Spring Boot 后端
-- `deploy/compose.dev.yml`：preview 环境 compose
-- `.github/workflows/deploy-preview.yml`：preview 自动部署 workflow
+- `deploy/compose.dev.yml`：Dev 环境（测试环境）
+- `deploy/compose.prod.yml`：Prod 环境（正式环境）
+- `.github/workflows/deploy-dev.yml`：Dev 自动部署 workflow
 
 ---
 
-## 2. Preview 环境
+## 2. 环境说明（核心）
+
+### 🌐 Prod（正式环境）
 
 - 域名：`https://preview.rainstorm.space`
-- 用途：预览环境 / 自动部署测试环境
-- 部署目录：`/opt/devplatform/projects/blog-system`
-- 反代目标：`127.0.0.1:8081`
-
----
-
-## 3. Prod 环境
-
-- 域名：`https://dev.rainstorm.space`
-- 用途：当前正式对外环境
+- 用途：对外访问
 - 前端端口：`3000`
 - 后端端口：`8080`
+- compose：`compose.prod.yml`
 
 ---
 
-## 4. Preview 自动部署流程
+### 🧪 Dev（测试环境）
+
+- 域名：`https://dev.rainstorm.space`
+- 用途：开发 / 测试 / 调试
+- 前端端口：`3001`
+- 后端端口：`8081`
+- compose：`compose.dev.yml`
+
+---
+
+## 3. Dev 自动部署流程（CI/CD）
 
 GitHub Actions workflow：
 
-- 文件：`.github/workflows/deploy-preview.yml`
+- 文件：`.github/workflows/deploy-dev.yml`
 - 触发方式：
   - `workflow_dispatch`
   - `push` 到 `main`
@@ -40,33 +45,44 @@ GitHub Actions workflow：
 
 1. GitHub Actions SSH 登录服务器
 2. 进入 `/opt/devplatform/projects/blog-system`
-3. `git pull origin main`
-4. `docker compose -f deploy/compose.dev.yml up -d --build`
+3. 拉取最新代码：
+
+```bash
+   git fetch origin main
+   git reset --hard origin/main
+```
+
+4. 启动 Dev 环境：
+
+    ```bash
+    docker compose -f deploy/compose.dev.yml up -d --build
+    ```
+
 
 ---
 
-## 5. 常用命令
+## 4. 常用命令
 
-### 查看 preview 容器
+### 查看 Dev 容器
 
 ```bash
 cd /opt/devplatform/projects/blog-system
 docker compose -f deploy/compose.dev.yml ps
-````
+```
 
-### 查看 preview 日志
+### 查看 Dev 日志
 
 ```bash
 docker compose -f deploy/compose.dev.yml logs -f
 ```
 
-### 只看 backend 日志
+### 查看 backend 日志
 
 ```bash
 docker compose -f deploy/compose.dev.yml logs -f backend
 ```
 
-### 只看 frontend 日志
+### 查看 frontend 日志
 
 ```bash
 docker compose -f deploy/compose.dev.yml logs -f frontend
@@ -74,40 +90,57 @@ docker compose -f deploy/compose.dev.yml logs -f frontend
 
 ---
 
-## 6. 健康检查
+## 5. 健康检查
 
-### 后端健康检查
+### Dev 后端
 
 ```bash
-curl http://127.0.0.1:8080/actuator/health
+curl http://127.0.0.1:8081/actuator/health
 ```
 
-### 前端本地检查
+### Dev 前端
 
 ```bash
-curl -I http://127.0.0.1:3000
+curl -I http://127.0.0.1:3001
 ```
 
 ---
 
-## 7. Nginx
+## 6. Nginx
 
-### Preview
+### 🌐 Prod（preview 域名）
 
 - 域名：`preview.rainstorm.space`
-- 反代到：`127.0.0.1:8081`
+- 前端 → `127.0.0.1:3000`
+- API → `127.0.0.1:8080`
 
-### Prod
+---
+
+### 🧪 Dev（dev 域名）
 
 - 域名：`dev.rainstorm.space`
-- 前端反代到：`127.0.0.1:3000`
-- 后端 API 反代到：`127.0.0.1:8080`
+- 前端 → `127.0.0.1:3001`
+- API → `127.0.0.1:8081`
+
+---
+
+## 7. Prod 手动发布（当前策略）
+
+```bash
+cd /opt/devplatform/projects/blog-system
+git pull origin main
+
+docker compose \
+  --env-file deploy/.env.prod \
+  -f deploy/compose.prod.yml \
+  up -d --build
+```
 
 ---
 
 ## 8. GitHub Secrets
 
-preview workflow 需要：
+Dev workflow 需要：
 
 - `SERVER_HOST`
 - `SERVER_PORT`
@@ -116,24 +149,26 @@ preview workflow 需要：
 
 ---
 
-## 9. SSH 相关
+## 9. SSH 说明
 
-### GitHub Actions -> 服务器
+### GitHub Actions → 服务器
 
-使用单独 SSH 私钥登录服务器用户 `character`
+- 使用独立 SSH 私钥
+- 登录用户：`character`
 
-### 服务器 -> GitHub 仓库
+### 服务器 → GitHub
 
-服务器本机通过 deploy key 拉取 `blog-system` 仓库代码
+- 使用 deploy key 拉取 `blog-system` 仓库
 
 ---
 
 ## 10. 权限要求
 
-项目目录需要保证部署用户可写：
-
 ```bash
 chown -R 1000:1000 /opt/devplatform/projects/blog-system
 ```
 
-如果 code-server 容器内用户 UID/GID 为 `1000:1000`，这样能保证 IDE 与服务器部署一致。
+说明：
+
+- 保证 code-server / Docker / 部署一致权限
+- 避免 node_modules / target 权限问题
