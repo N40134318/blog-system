@@ -25,7 +25,7 @@ const loadCategories = async () => {
 
   try {
     const data = await api<{
-      content: PostItem[]
+      list: PostItem[]
       page: number
       totalPages: number
       totalElements: number
@@ -34,7 +34,7 @@ const loadCategories = async () => {
 
     const map = new Map<string, number>()
 
-    for (const post of data.content || []) {
+    for (const post of data.list || []) {
       const name = (post.category || '未分类').trim() || '未分类'
       map.set(name, (map.get(name) || 0) + 1)
     }

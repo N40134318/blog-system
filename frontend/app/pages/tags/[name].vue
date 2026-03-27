@@ -32,14 +32,14 @@ const loadPosts = async () => {
 
   try {
     const data = await api<{
-      content: PostItem[]
+      list: PostItem[]
       page: number
       totalPages: number
       totalElements: number
       size: number
     }>('/api/posts?page=0&size=100&keyword=')
 
-    posts.value = (data.content || []).filter(post => {
+    posts.value = (data.list || []).filter(post => {
       const tagList = splitTags(post.tags)
       return tagList.includes(tagName.value)
     })

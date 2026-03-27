@@ -1,0 +1,71 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: blog-mysql-dev
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_DATABASE: blogdb
+      MYSQL_USER: bloguser
+      MYSQL_PASSWORD: blogpass
+    ports:
+      - "127.0.0.1:3307:3306"
+    volumes:
+      - blog_mysql_data_dev:/var/lib/mysql
+
+  redis:
+    image: redis:7
+    container_name: blog-redis-dev
+    restart: always
+    ports:
+      - "127.0.0.1:6380:6379"
+
+  backend:
+      image: blog-backend:dev
+      build:
+        context: ../backend
+        dockerfile: Dockerfile
+      container_name: blog-backend-dev
+      working_dir: /workspace
+      command: ./mvnw spring-boot:run
+      volumes:
+        - ../backend:/workspace
+        - /opt/devplatform/uploads:/app/uploads
+      ports:
+        - "127.0.0.1:8081:8080"
+      environment:
+        SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/blogdb?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+        SPRING_DATASOURCE_USERNAME: root
+        SPRING_DATASOURCE_PASSWORD: root123
+        SPRING_DATA_REDIS_HOST: redis
+        SPRING_DATA_REDIS_PORT: 6379
+        SPRING_FLYWAY_ENABLED: false
+      restart: always
+      depends_on:
+        - mysql
+        - redis
+
+  frontend:
+    image: blog-frontend:dev
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+    container_name: blog-frontend-dev
+    working_dir: /workspace
+    volumes:
+      - ../frontend:/workspace
+      - blog_frontend_node_modules_dev:/workspace/node_modules
+      - blog_frontend_nuxt_dev:/workspace/.nuxt
+    environment:
+      CI: "true"
+    ports:
+      - "127.0.0.1:3001:3000"
+    command: sh -c "pnpm install --no-frozen-lockfile && pnpm dev --host 0.0.0.0 --port 3000"
+    restart: always
+    depends_on:
+      - backend
+
+volumes:
+  blog_mysql_data_dev:
+  blog_frontend_node_modules_dev:
+  blog_frontend_nuxt_dev:

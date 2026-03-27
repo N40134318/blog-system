@@ -9,7 +9,7 @@ export default defineNuxtConfig({
             appName:
                 process.env.NUXT_PUBLIC_APP_NAME || 'Rainstorm Dev Platform',
             apiBase:
-                process.env.NUXT_PUBLIC_API_BASE || '/api'
+                process.env.NUXT_PUBLIC_API_BASE || ''
         }
     },
     routeRules: {

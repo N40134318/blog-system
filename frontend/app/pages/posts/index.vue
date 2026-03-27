@@ -16,7 +16,7 @@ type PostItem = {
 }
 
 type PageResponse = {
-  content: PostItem[]
+  list: PostItem[]
   page: number
   totalPages: number
   totalElements: number
@@ -59,7 +59,7 @@ const loadPosts = async () => {
 
     const data = await api<PageResponse>(`/api/posts?${query.toString()}`)
 
-    posts.value = data.content || []
+    posts.value = data.list || []
     totalPages.value = data.totalPages || 0
     totalElements.value = data.totalElements || 0
   } catch (error: any) {
@@ -361,3 +361,4 @@ onMounted(loadPosts)
     </div>
   </div>
 </template>
+

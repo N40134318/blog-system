@@ -178,16 +178,3 @@ PermitRootLogin no
 
 ````
 
----
-
-# 第四步：保存后提交
-
-在 monorepo 根目录执行：
-
-```bash
-cd /config/workspace/blog-system
-git status
-git add docs/deploy-runbook.md docs/ops-troubleshooting.md
-git commit -m "docs: add deploy runbook and troubleshooting notes"
-git push
-````
