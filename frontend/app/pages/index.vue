@@ -17,7 +17,7 @@ type PostItem = {
 }
 
 type PostListResponse = {
-  list: PostItem[]
+  content: PostItem[]
   page: number
   totalPages: number
   totalElements: number
@@ -52,7 +52,7 @@ const formatTime = (timestamp: number | null | undefined) => {
 const loadLatestPosts = async () => {
   try {
     const data = await api<PostListResponse>('/api/posts?page=0&size=6&keyword=&sort=latest')
-    latestPosts.value = data.list || []
+    latestPosts.value = data.content || []
     totalPosts.value = data.totalElements || 0
   } catch (error) {
     latestPosts.value = []
@@ -63,7 +63,7 @@ const loadLatestPosts = async () => {
 const loadHotPosts = async () => {
   try {
     const data = await api<PostListResponse>('/api/posts/hot?size=6')
-    hotPosts.value = data.list || []
+    hotPosts.value = data.content || []
   } catch (error) {
     hotPosts.value = []
   } finally {

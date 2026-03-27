@@ -25,14 +25,14 @@ const loadPosts = async () => {
 
   try {
     const data = await api<{
-      list: PostItem[]
+      content: PostItem[]
       page: number
       totalPages: number
       totalElements: number
       size: number
     }>('/api/posts?page=0&size=100&keyword=')
 
-    posts.value = (data.list || []).filter(post => {
+    posts.value = (data.content || []).filter(post => {
       const name = (post.category || '未分类').trim() || '未分类'
       return name === categoryName.value
     })

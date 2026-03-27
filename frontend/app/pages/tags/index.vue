@@ -32,7 +32,7 @@ const loadTags = async () => {
 
   try {
     const data = await api<{
-      list: PostItem[]
+      content: PostItem[]
       page: number
       totalPages: number
       totalElements: number
@@ -41,7 +41,7 @@ const loadTags = async () => {
 
     const map = new Map<string, number>()
 
-    for (const post of data.list || []) {
+    for (const post of data.content || []) {
       const tagList = splitTags(post.tags)
 
       for (const tag of tagList) {
