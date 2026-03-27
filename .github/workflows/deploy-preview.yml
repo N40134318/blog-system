@@ -20,7 +20,22 @@ jobs:
           key: ${{ secrets.SERVER_SSH_KEY }}
           script: |
             set -e
+
             cd /opt/devplatform/projects/blog-system
+
             git config --global --add safe.directory /opt/devplatform/projects/blog-system || true
             git pull origin main
+
             docker compose -f deploy/compose.dev.yml up -d --build
+
+            for i in {1..30}; do
+              if curl -fsS http://127.0.0.1:8081/actuator/health; then
+                break
+              fi
+              sleep 2
+            done
+
+            curl -fsS http://127.0.0.1:8081/actuator/health
+            curl -fsSI http://127.0.0.1:3001
+
+            echo "[INFO] Preview deploy success"
