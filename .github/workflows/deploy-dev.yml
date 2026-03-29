@@ -9,7 +9,6 @@ on:
 jobs:
   deploy-dev:
     runs-on: ubuntu-latest
-
     steps:
       - name: Deploy Dev
         uses: appleboy/ssh-action@v1.0.3
@@ -24,22 +23,31 @@ jobs:
             PROJECT_DIR=/opt/devplatform/projects/blog-system
             DEV_COMPOSE=deploy/compose.dev.yml
             PROD_COMPOSE=deploy/compose.prod.yml
+            DEV_ENV=deploy/.env.dev
+            PROD_ENV=deploy/.env.prod
 
             echo "[INFO] enter project dir"
-            cd $PROJECT_DIR
+            cd "$PROJECT_DIR"
 
             echo "[INFO] mark git safe.directory"
-            git config --global --add safe.directory $PROJECT_DIR || true
+            git config --global --add safe.directory "$PROJECT_DIR" || true
 
             echo "[INFO] pull latest code"
             git fetch origin main
             git reset --hard origin/main
 
-            echo "[INFO] stop prod environment to free VPS resources"
-            docker compose -f $PROD_COMPOSE down || true
+            echo "[INFO] ensure prod is not running"
+            if docker ps --format '{{.Names}}' | grep -q '^blog-frontend-prod$'; then
+              echo "[WARN] prod is running, skip dev deploy"
+              echo "[INFO] stop prod manually before deploying dev"
+              exit 0
+            fi
 
-            echo "[INFO] rebuild dev containers"
-            docker compose -f $DEV_COMPOSE up -d --build
+            echo "[INFO] stop prod environment if leftover containers exist"
+            docker compose --env-file "$PROD_ENV" -f "$PROD_COMPOSE" down || true
+
+            echo "[INFO] rebuild and start dev containers"
+            docker compose --env-file "$DEV_ENV" -f "$DEV_COMPOSE" up -d --build
 
             echo "[INFO] waiting dev backend health"
             for i in {1..40}; do
@@ -63,6 +71,7 @@ jobs:
             echo "[INFO] frontend final check"
             curl -fsSI http://127.0.0.1:3001
 
-            echo "[INFO] dev deploy success"
-
+            echo "[INFO] running containers"
             docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+            echo "[INFO] dev deploy success"
