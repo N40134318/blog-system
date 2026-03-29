@@ -13,6 +13,8 @@ backend/*.jar
 .env
 .env.*
 !.env.example
+!deploy/.env.dev
+deploy/.env.prod
 
 # logs
 *.log
