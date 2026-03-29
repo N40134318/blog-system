@@ -1,0 +1,60 @@
+name: Deploy Prod
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy Prod
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          port: ${{ secrets.SERVER_PORT }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -e
+
+            PROJECT_DIR=/opt/devplatform/projects/blog-system
+            COMPOSE_FILE=deploy/compose.prod.yml
+            ENV_FILE=deploy/.env.prod
+
+            echo "[INFO] enter project dir"
+            cd $PROJECT_DIR
+
+            echo "[INFO] mark git safe.directory"
+            git config --global --add safe.directory $PROJECT_DIR || true
+
+            echo "[INFO] pull latest code"
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "[INFO] rebuild prod containers"
+            docker compose --env-file $ENV_FILE -f $COMPOSE_FILE up -d --build
+
+            echo "[INFO] waiting backend health"
+            for i in {1..40}; do
+              if curl -fsS http://127.0.0.1:8080/actuator/health >/dev/null; then
+                break
+              fi
+              sleep 2
+            done
+
+            echo "[INFO] waiting frontend"
+            for i in {1..40}; do
+              if curl -fsSI http://127.0.0.1:3000 >/dev/null; then
+                break
+              fi
+              sleep 2
+            done
+
+            echo "[INFO] backend final check"
+            curl -fsS http://127.0.0.1:8080/actuator/health
+
+            echo "[INFO] frontend final check"
+            curl -fsSI http://127.0.0.1:3000
+
+            echo "[INFO] prod deploy success"
