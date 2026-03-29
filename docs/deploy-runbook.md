@@ -172,3 +172,21 @@ chown -R 1000:1000 /opt/devplatform/projects/blog-system
 
 - 保证 code-server / Docker / 部署一致权限
 - 避免 node_modules / target 权限问题
+
+## 当前常驻开发环境
+
+运行中的容器：
+- blog-frontend-dev
+- blog-backend-dev
+- blog-redis-dev
+- blog-mysql-dev
+
+当前 Dev 关键卷：
+- deploy_blog_mysql_data_dev
+- deploy_blog_frontend_node_modules_dev
+- deploy_blog_frontend_nuxt_dev
+
+历史 MySQL 卷（暂保留，不删除）：
+- backend_blog_mysql_data_prod
+- blog-backend_blog_mysql_data
+- blog-backend_blog_mysql_data_prod

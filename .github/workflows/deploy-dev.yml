@@ -22,7 +22,8 @@ jobs:
             set -e
 
             PROJECT_DIR=/opt/devplatform/projects/blog-system
-            COMPOSE_FILE=deploy/compose.dev.yml
+            DEV_COMPOSE=deploy/compose.dev.yml
+            PROD_COMPOSE=deploy/compose.prod.yml
 
             echo "[INFO] enter project dir"
             cd $PROJECT_DIR
@@ -34,10 +35,13 @@ jobs:
             git fetch origin main
             git reset --hard origin/main
 
-            echo "[INFO] rebuild dev containers"
-            docker compose -f $COMPOSE_FILE up -d --build
+            echo "[INFO] stop prod environment to free VPS resources"
+            docker compose -f $PROD_COMPOSE down || true
 
-            echo "[INFO] waiting backend health"
+            echo "[INFO] rebuild dev containers"
+            docker compose -f $DEV_COMPOSE up -d --build
+
+            echo "[INFO] waiting dev backend health"
             for i in {1..40}; do
               if curl -fsS http://127.0.0.1:8081/actuator/health >/dev/null; then
                 break
@@ -45,7 +49,7 @@ jobs:
               sleep 2
             done
 
-            echo "[INFO] waiting frontend"
+            echo "[INFO] waiting dev frontend"
             for i in {1..40}; do
               if curl -fsSI http://127.0.0.1:3001 >/dev/null; then
                 break
@@ -60,3 +64,5 @@ jobs:
             curl -fsSI http://127.0.0.1:3001
 
             echo "[INFO] dev deploy success"
+
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
