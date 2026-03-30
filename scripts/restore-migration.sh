@@ -10,10 +10,12 @@ ARCHIVE_PATH="$1"
 PROJECT_DIR="/opt/devplatform/projects/blog-system"
 BACKUP_ROOT="/opt/devplatform/backups/migration/restore-tmp"
 UPLOADS_DIR="/opt/devplatform/uploads"
+TMP_PROJECT_RESTORE="/tmp/blog-system-project-restore"
 
 mkdir -p "$BACKUP_ROOT"
 mkdir -p "$(dirname "$PROJECT_DIR")"
 mkdir -p "$UPLOADS_DIR"
+mkdir -p "$TMP_PROJECT_RESTORE"
 
 echo "[INFO] archive: $ARCHIVE_PATH"
 
@@ -36,8 +38,13 @@ echo "[INFO] extracted dir: $EXTRACT_DIR"
 echo "[INFO] ensure project dir exists"
 mkdir -p "$PROJECT_DIR"
 
-echo "[INFO] restore project files"
-cp -a "$EXTRACT_DIR/project/." "$PROJECT_DIR/" 2>/dev/null || true
+echo "[INFO] restore project files except current restore script"
+cp -a "$EXTRACT_DIR/project/." "$TMP_PROJECT_RESTORE/" 2>/dev/null || true
+
+# 不覆盖当前正在执行的 restore 脚本
+rm -f "$TMP_PROJECT_RESTORE/scripts/restore-migration.sh" 2>/dev/null || true
+
+cp -a "$TMP_PROJECT_RESTORE/." "$PROJECT_DIR/" 2>/dev/null || true
 
 echo "[INFO] restore uploads"
 cp -a "$EXTRACT_DIR/uploads/." "$UPLOADS_DIR/" 2>/dev/null || true
@@ -56,6 +63,7 @@ COMPOSE_FILE=""
 ENV_FILE=""
 MYSQL_CONTAINER=""
 BACKEND_CONTAINER=""
+FRONTEND_CONTAINER=""
 BACKEND_HEALTH_URL=""
 FRONTEND_URL=""
 SQL_DUMP=""
@@ -66,6 +74,7 @@ if [ "$ENV_CHOICE" = "1" ]; then
   ENV_FILE="$PROJECT_DIR/deploy/.env.dev"
   MYSQL_CONTAINER="blog-mysql-dev"
   BACKEND_CONTAINER="blog-backend-dev"
+  FRONTEND_CONTAINER="blog-frontend-dev"
   BACKEND_HEALTH_URL="http://127.0.0.1:8081/actuator/health"
   FRONTEND_URL="http://127.0.0.1:3001"
   SQL_DUMP="$EXTRACT_DIR/data/blogdb-dev.sql.gz"
@@ -76,6 +85,7 @@ elif [ "$ENV_CHOICE" = "2" ]; then
   ENV_FILE="$PROJECT_DIR/deploy/.env.prod"
   MYSQL_CONTAINER="blog-mysql-prod"
   BACKEND_CONTAINER="blog-backend-prod"
+  FRONTEND_CONTAINER="blog-frontend-prod"
   BACKEND_HEALTH_URL="http://127.0.0.1:8080/actuator/health"
   FRONTEND_URL="http://127.0.0.1:3000"
   SQL_DUMP="$EXTRACT_DIR/data/blogdb-prod.sql.gz"
@@ -197,7 +207,7 @@ done
 
 if ! curl -fsSI "$FRONTEND_URL" >/dev/null; then
   echo "[WARN] frontend http check failed"
-  docker logs --tail 200 blog-frontend-"$TARGET_ENV" || true
+  docker logs --tail 200 "$FRONTEND_CONTAINER" || true
 fi
 
 echo "[INFO] backend final check"
