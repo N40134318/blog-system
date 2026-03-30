@@ -48,29 +48,35 @@ docker inspect blog-frontend-prod > "$PKG_DIR/state/blog-frontend-prod.inspect.j
 
 echo "[INFO] export mysql dumps if container exists"
 
+echo "[INFO] export mysql dumps if container exists"
+
 if docker ps -a --format '{{.Names}}' | grep -q "^${MYSQL_CONTAINER_DEV}$"; then
   if [ -f "$DEV_ENV_FILE" ]; then
-    set -o allexport
-    source "$DEV_ENV_FILE"
-    set +o allexport
-    DEV_MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-}"
+    DEV_MYSQL_ROOT_PASSWORD="$(grep '^MYSQL_ROOT_PASSWORD=' "$DEV_ENV_FILE" | cut -d= -f2- || true)"
     if [ -n "${DEV_MYSQL_ROOT_PASSWORD:-}" ]; then
       docker exec "$MYSQL_CONTAINER_DEV" sh -c "exec mysqldump -uroot -p${DEV_MYSQL_ROOT_PASSWORD} --databases blogdb" \
         | gzip > "$PKG_DIR/data/blogdb-dev.sql.gz"
+      echo "[INFO] dev mysql dump exported"
+    else
+      echo "[WARN] MYSQL_ROOT_PASSWORD not found in $DEV_ENV_FILE"
     fi
+  else
+    echo "[WARN] dev env file not found: $DEV_ENV_FILE"
   fi
 fi
 
 if docker ps -a --format '{{.Names}}' | grep -q "^${MYSQL_CONTAINER_PROD}$"; then
   if [ -f "$PROD_ENV_FILE" ]; then
-    set -o allexport
-    source "$PROD_ENV_FILE"
-    set +o allexport
-    PROD_MYSQL_ROOT_PASSWORD="${MYSQL_ROOT_PASSWORD:-}"
+    PROD_MYSQL_ROOT_PASSWORD="$(grep '^MYSQL_ROOT_PASSWORD=' "$PROD_ENV_FILE" | cut -d= -f2- || true)"
     if [ -n "${PROD_MYSQL_ROOT_PASSWORD:-}" ]; then
       docker exec "$MYSQL_CONTAINER_PROD" sh -c "exec mysqldump -uroot -p${PROD_MYSQL_ROOT_PASSWORD} --databases blogdb" \
         | gzip > "$PKG_DIR/data/blogdb-prod.sql.gz"
+      echo "[INFO] prod mysql dump exported"
+    else
+      echo "[WARN] MYSQL_ROOT_PASSWORD not found in $PROD_ENV_FILE"
     fi
+  else
+    echo "[WARN] prod env file not found: $PROD_ENV_FILE"
   fi
 fi
 
