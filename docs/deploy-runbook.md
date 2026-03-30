@@ -190,3 +190,9 @@ chown -R 1000:1000 /opt/devplatform/projects/blog-system
 - backend_blog_mysql_data_prod
 - blog-backend_blog_mysql_data
 - blog-backend_blog_mysql_data_prod
+
+## 环境迁移
+见：migration-guide.md
+
+## 数据恢复
+见：migration-guide.md

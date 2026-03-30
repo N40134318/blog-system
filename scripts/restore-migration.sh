@@ -12,9 +12,15 @@ BACKUP_ROOT="/opt/devplatform/backups/migration/restore-tmp"
 UPLOADS_DIR="/opt/devplatform/uploads"
 TMP_PROJECT_RESTORE="/tmp/blog-system-project-restore"
 
+cleanup() {
+  rm -rf "$TMP_PROJECT_RESTORE" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 mkdir -p "$BACKUP_ROOT"
 mkdir -p "$(dirname "$PROJECT_DIR")"
 mkdir -p "$UPLOADS_DIR"
+rm -rf "$TMP_PROJECT_RESTORE"
 mkdir -p "$TMP_PROJECT_RESTORE"
 
 echo "[INFO] archive: $ARCHIVE_PATH"
@@ -40,10 +46,7 @@ mkdir -p "$PROJECT_DIR"
 
 echo "[INFO] restore project files except current restore script"
 cp -a "$EXTRACT_DIR/project/." "$TMP_PROJECT_RESTORE/" 2>/dev/null || true
-
-# 不覆盖当前正在执行的 restore 脚本
 rm -f "$TMP_PROJECT_RESTORE/scripts/restore-migration.sh" 2>/dev/null || true
-
 cp -a "$TMP_PROJECT_RESTORE/." "$PROJECT_DIR/" 2>/dev/null || true
 
 echo "[INFO] restore uploads"
@@ -67,6 +70,7 @@ FRONTEND_CONTAINER=""
 BACKEND_HEALTH_URL=""
 FRONTEND_URL=""
 SQL_DUMP=""
+MYSQL_VOLUME_NAME=""
 
 if [ "$ENV_CHOICE" = "1" ]; then
   TARGET_ENV="dev"
@@ -78,6 +82,7 @@ if [ "$ENV_CHOICE" = "1" ]; then
   BACKEND_HEALTH_URL="http://127.0.0.1:8081/actuator/health"
   FRONTEND_URL="http://127.0.0.1:3001"
   SQL_DUMP="$EXTRACT_DIR/data/blogdb-dev.sql.gz"
+  MYSQL_VOLUME_NAME="deploy_blog_mysql_data_dev"
   echo "[INFO] restore dev environment"
 elif [ "$ENV_CHOICE" = "2" ]; then
   TARGET_ENV="prod"
@@ -89,6 +94,7 @@ elif [ "$ENV_CHOICE" = "2" ]; then
   BACKEND_HEALTH_URL="http://127.0.0.1:8080/actuator/health"
   FRONTEND_URL="http://127.0.0.1:3000"
   SQL_DUMP="$EXTRACT_DIR/data/blogdb-prod.sql.gz"
+  MYSQL_VOLUME_NAME="backend_blog_mysql_data_prod"
   echo "[INFO] restore prod environment"
 else
   echo "[ERROR] invalid choice"
@@ -102,6 +108,7 @@ fi
 
 if [ ! -f "$ENV_FILE" ]; then
   echo "[ERROR] env file not found: $ENV_FILE"
+  echo "[WARN] this file is usually ignored by git and may need manual creation"
   exit 1
 fi
 
@@ -122,13 +129,16 @@ fi
 
 if [ "$TARGET_ENV" = "prod" ]; then
   echo "[INFO] ensure external mysql volume exists"
-  if ! docker volume inspect backend_blog_mysql_data_prod >/dev/null 2>&1; then
-    docker volume create backend_blog_mysql_data_prod >/dev/null
-    echo "[INFO] created volume: backend_blog_mysql_data_prod"
+  if ! docker volume inspect "$MYSQL_VOLUME_NAME" >/dev/null 2>&1; then
+    docker volume create "$MYSQL_VOLUME_NAME" >/dev/null
+    echo "[INFO] created volume: $MYSQL_VOLUME_NAME"
   else
-    echo "[INFO] volume already exists: backend_blog_mysql_data_prod"
+    echo "[INFO] volume already exists: $MYSQL_VOLUME_NAME"
   fi
 fi
+
+echo "[INFO] stop target environment first"
+docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down || true
 
 echo "[INFO] start mysql and redis first"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d mysql redis
@@ -160,12 +170,19 @@ if ! docker exec "$MYSQL_CONTAINER" mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQ
   exit 1
 fi
 
-echo "[INFO] import sql dump if exists"
+echo "[INFO] recreate target database"
+docker exec -i "$MYSQL_CONTAINER" mysql -uroot -p"$MYSQL_ROOT_PASSWORD" <<SQL
+DROP DATABASE IF EXISTS \`${MYSQL_DATABASE}\`;
+CREATE DATABASE \`${MYSQL_DATABASE}\`;
+SQL
+
 if [ -f "$SQL_DUMP" ]; then
-  gzip -cd "$SQL_DUMP" | docker exec -i "$MYSQL_CONTAINER" mysql -uroot -p"$MYSQL_ROOT_PASSWORD"
+  echo "[INFO] import sql dump"
+  gzip -cd "$SQL_DUMP" | docker exec -i "$MYSQL_CONTAINER" mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"
   echo "[INFO] sql import done"
 else
   echo "[WARN] sql dump not found: $SQL_DUMP"
+  echo "[WARN] continue without database import"
 fi
 
 if [ -n "${MYSQL_USER:-}" ] && [ -n "${MYSQL_PASSWORD:-}" ]; then
@@ -184,13 +201,13 @@ docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build
 
 echo "[INFO] wait for backend health"
 for i in {1..90}; do
-  if curl -fsS "$BACKEND_HEALTH_URL" >/dev/null; then
+  if curl -fsS "$BACKEND_HEALTH_URL" >/dev/null 2>&1; then
     break
   fi
   sleep 2
 done
 
-if ! curl -fsS "$BACKEND_HEALTH_URL" >/dev/null; then
+if ! curl -fsS "$BACKEND_HEALTH_URL" >/dev/null 2>&1; then
   echo "[ERROR] backend health check failed"
   docker logs --tail 200 "$BACKEND_CONTAINER" || true
   docker logs --tail 100 "$MYSQL_CONTAINER" || true
@@ -199,13 +216,13 @@ fi
 
 echo "[INFO] wait for frontend"
 for i in {1..90}; do
-  if curl -fsSI "$FRONTEND_URL" >/dev/null; then
+  if curl -fsSI "$FRONTEND_URL" >/dev/null 2>&1; then
     break
   fi
   sleep 2
 done
 
-if ! curl -fsSI "$FRONTEND_URL" >/dev/null; then
+if ! curl -fsSI "$FRONTEND_URL" >/dev/null 2>&1; then
   echo "[WARN] frontend http check failed"
   docker logs --tail 200 "$FRONTEND_CONTAINER" || true
 fi

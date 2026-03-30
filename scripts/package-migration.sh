@@ -4,8 +4,9 @@ set -euo pipefail
 PROJECT_DIR="/opt/devplatform/projects/blog-system"
 BACKUP_ROOT="/opt/devplatform/backups/migration"
 TS="$(date +%F_%H-%M-%S)"
-PKG_DIR="$BACKUP_ROOT/blog-system-migration-$TS"
-ARCHIVE="$BACKUP_ROOT/blog-system-migration-$TS.tar.gz"
+PKG_NAME="blog-system-migration-$TS"
+PKG_DIR="$BACKUP_ROOT/$PKG_NAME"
+ARCHIVE="$BACKUP_ROOT/$PKG_NAME.tar.gz"
 
 MYSQL_CONTAINER_DEV="blog-mysql-dev"
 MYSQL_CONTAINER_PROD="blog-mysql-prod"
@@ -41,12 +42,12 @@ docker ps -a --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}" > 
 docker volume ls > "$PKG_DIR/state/docker-volume-ls.txt" || true
 docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.ID}}\t{{.CreatedSince}}\t{{.Size}}" > "$PKG_DIR/state/docker-images.txt" || true
 
-docker inspect blog-mysql-dev > "$PKG_DIR/state/blog-mysql-dev.inspect.json" 2>/dev/null || true
-docker inspect blog-mysql-prod > "$PKG_DIR/state/blog-mysql-prod.inspect.json" 2>/dev/null || true
+docker inspect "$MYSQL_CONTAINER_DEV" > "$PKG_DIR/state/blog-mysql-dev.inspect.json" 2>/dev/null || true
+docker inspect "$MYSQL_CONTAINER_PROD" > "$PKG_DIR/state/blog-mysql-prod.inspect.json" 2>/dev/null || true
 docker inspect blog-frontend-dev > "$PKG_DIR/state/blog-frontend-dev.inspect.json" 2>/dev/null || true
 docker inspect blog-frontend-prod > "$PKG_DIR/state/blog-frontend-prod.inspect.json" 2>/dev/null || true
-
-echo "[INFO] export mysql dumps if container exists"
+docker inspect blog-backend-dev > "$PKG_DIR/state/blog-backend-dev.inspect.json" 2>/dev/null || true
+docker inspect blog-backend-prod > "$PKG_DIR/state/blog-backend-prod.inspect.json" 2>/dev/null || true
 
 echo "[INFO] export mysql dumps if container exists"
 
@@ -54,35 +55,49 @@ if docker ps -a --format '{{.Names}}' | grep -q "^${MYSQL_CONTAINER_DEV}$"; then
   if [ -f "$DEV_ENV_FILE" ]; then
     DEV_MYSQL_ROOT_PASSWORD="$(grep '^MYSQL_ROOT_PASSWORD=' "$DEV_ENV_FILE" | cut -d= -f2- || true)"
     if [ -n "${DEV_MYSQL_ROOT_PASSWORD:-}" ]; then
-      docker exec "$MYSQL_CONTAINER_DEV" sh -c "exec mysqldump -uroot -p${DEV_MYSQL_ROOT_PASSWORD} --databases blogdb" \
-        | gzip > "$PKG_DIR/data/blogdb-dev.sql.gz"
-      echo "[INFO] dev mysql dump exported"
+      if docker exec "$MYSQL_CONTAINER_DEV" sh -c "exec mysqldump -uroot -p${DEV_MYSQL_ROOT_PASSWORD} --databases blogdb" \
+        | gzip > "$PKG_DIR/data/blogdb-dev.sql.gz"; then
+        echo "[INFO] dev mysql dump exported"
+      else
+        echo "[WARN] failed to export dev mysql dump"
+        rm -f "$PKG_DIR/data/blogdb-dev.sql.gz" 2>/dev/null || true
+      fi
     else
       echo "[WARN] MYSQL_ROOT_PASSWORD not found in $DEV_ENV_FILE"
     fi
   else
     echo "[WARN] dev env file not found: $DEV_ENV_FILE"
   fi
+else
+  echo "[WARN] dev mysql container not found: $MYSQL_CONTAINER_DEV"
 fi
 
 if docker ps -a --format '{{.Names}}' | grep -q "^${MYSQL_CONTAINER_PROD}$"; then
   if [ -f "$PROD_ENV_FILE" ]; then
     PROD_MYSQL_ROOT_PASSWORD="$(grep '^MYSQL_ROOT_PASSWORD=' "$PROD_ENV_FILE" | cut -d= -f2- || true)"
     if [ -n "${PROD_MYSQL_ROOT_PASSWORD:-}" ]; then
-      docker exec "$MYSQL_CONTAINER_PROD" sh -c "exec mysqldump -uroot -p${PROD_MYSQL_ROOT_PASSWORD} --databases blogdb" \
-        | gzip > "$PKG_DIR/data/blogdb-prod.sql.gz"
-      echo "[INFO] prod mysql dump exported"
+      if docker exec "$MYSQL_CONTAINER_PROD" sh -c "exec mysqldump -uroot -p${PROD_MYSQL_ROOT_PASSWORD} --databases blogdb" \
+        | gzip > "$PKG_DIR/data/blogdb-prod.sql.gz"; then
+        echo "[INFO] prod mysql dump exported"
+      else
+        echo "[WARN] failed to export prod mysql dump"
+        rm -f "$PKG_DIR/data/blogdb-prod.sql.gz" 2>/dev/null || true
+      fi
     else
       echo "[WARN] MYSQL_ROOT_PASSWORD not found in $PROD_ENV_FILE"
     fi
   else
     echo "[WARN] prod env file not found: $PROD_ENV_FILE"
   fi
+else
+  echo "[WARN] prod mysql container not found: $MYSQL_CONTAINER_PROD"
 fi
 
 echo "[INFO] copy uploads"
 if [ -d "$UPLOADS_DIR" ]; then
   cp -a "$UPLOADS_DIR/." "$PKG_DIR/uploads/" || true
+else
+  echo "[WARN] uploads dir not found: $UPLOADS_DIR"
 fi
 
 echo "[INFO] write migration notes"
@@ -103,12 +118,13 @@ cat > "$PKG_DIR/MIGRATION_README.md" <<'EOF'
 1. Prepare Docker / Docker Compose on target machine
 2. Clone repository or copy project files
 3. Restore deploy configs and env files
-4. Restore nginx configs and certificates manually
+4. Restore nginx configs and certificates manually if needed
 5. Restore uploads to target path
 6. Start mysql container first
-7. Import sql dump
-8. Start app containers
-9. Verify nginx reverse proxy and domain resolution
+7. Recreate target database
+8. Import sql dump
+9. Start app containers
+10. Verify backend / frontend / uploads / nginx
 
 ## Security notes
 - This package may contain sensitive env files
@@ -120,10 +136,11 @@ cat > "$PKG_DIR/MIGRATION_README.md" <<'EOF'
 - This package does not include SSL cert private deployment automation
 - This package does not directly copy docker volumes
 - MySQL is migrated by dump/import, which is safer across machines
+- If only one environment is running, the other environment dump may be absent
 EOF
 
 echo "[INFO] create archive"
-tar -czf "$ARCHIVE" -C "$BACKUP_ROOT" "blog-system-migration-$TS"
+tar -czf "$ARCHIVE" -C "$BACKUP_ROOT" "$PKG_NAME"
 
 echo "[INFO] done"
 echo "[INFO] archive: $ARCHIVE"
