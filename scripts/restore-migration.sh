@@ -11,6 +11,7 @@ PROJECT_DIR="/opt/devplatform/projects/blog-system"
 BACKUP_ROOT="/opt/devplatform/backups/migration/restore-tmp"
 UPLOADS_DIR="/opt/devplatform/uploads"
 TMP_PROJECT_RESTORE="/tmp/blog-system-project-restore"
+EXTRACT_DIR=""
 
 cleanup() {
   rm -rf "$TMP_PROJECT_RESTORE" 2>/dev/null || true
@@ -20,22 +21,26 @@ trap cleanup EXIT
 mkdir -p "$BACKUP_ROOT"
 mkdir -p "$(dirname "$PROJECT_DIR")"
 mkdir -p "$UPLOADS_DIR"
+
 rm -rf "$TMP_PROJECT_RESTORE"
 mkdir -p "$TMP_PROJECT_RESTORE"
 
 echo "[INFO] archive: $ARCHIVE_PATH"
-
 if [ ! -f "$ARCHIVE_PATH" ]; then
   echo "[ERROR] archive not found: $ARCHIVE_PATH"
   exit 1
 fi
 
+ARCHIVE_BASENAME="$(basename "$ARCHIVE_PATH")"
+PACKAGE_NAME="${ARCHIVE_BASENAME%.tar.gz}"
+EXTRACT_DIR="$BACKUP_ROOT/$PACKAGE_NAME"
+
 echo "[INFO] extract archive"
+rm -rf "$EXTRACT_DIR"
 tar -xzf "$ARCHIVE_PATH" -C "$BACKUP_ROOT"
 
-EXTRACT_DIR="$(find "$BACKUP_ROOT" -maxdepth 1 -type d -name 'blog-system-migration-*' | sort | tail -n 1)"
-if [ -z "${EXTRACT_DIR:-}" ] || [ ! -d "$EXTRACT_DIR" ]; then
-  echo "[ERROR] extracted directory not found"
+if [ ! -d "$EXTRACT_DIR" ]; then
+  echo "[ERROR] extracted directory not found: $EXTRACT_DIR"
   exit 1
 fi
 
@@ -137,6 +142,24 @@ if [ "$TARGET_ENV" = "prod" ]; then
   fi
 fi
 
+if [ "$TARGET_ENV" = "dev" ] && [ ! -f "$SQL_DUMP" ]; then
+  PROD_FALLBACK_DUMP="$EXTRACT_DIR/data/blogdb-prod.sql.gz"
+  if [ -f "$PROD_FALLBACK_DUMP" ]; then
+    echo "[WARN] dev sql dump not found: $SQL_DUMP"
+    echo "[WARN] prod sql dump found: $PROD_FALLBACK_DUMP"
+    read -r -p "Use prod dump to restore dev database? [y/N]: " USE_PROD_DUMP
+    case "${USE_PROD_DUMP:-N}" in
+      y|Y|yes|YES)
+        SQL_DUMP="$PROD_FALLBACK_DUMP"
+        echo "[INFO] use prod dump for dev restore: $SQL_DUMP"
+        ;;
+      *)
+        echo "[INFO] continue without database import"
+        ;;
+    esac
+  fi
+fi
+
 echo "[INFO] stop target environment first"
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down || true
 
@@ -177,7 +200,7 @@ CREATE DATABASE \`${MYSQL_DATABASE}\`;
 SQL
 
 if [ -f "$SQL_DUMP" ]; then
-  echo "[INFO] import sql dump"
+  echo "[INFO] import sql dump: $SQL_DUMP"
   gzip -cd "$SQL_DUMP" | docker exec -i "$MYSQL_CONTAINER" mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"
   echo "[INFO] sql import done"
 else
