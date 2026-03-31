@@ -15,7 +15,8 @@ DEV_ENV_FILE="$PROJECT_DIR/deploy/.env.dev"
 PROD_ENV_FILE="$PROJECT_DIR/deploy/.env.prod"
 
 UPLOADS_DIR="/opt/devplatform/uploads"
-NGINX_DIR="/etc/nginx/conf.d"
+SYSTEM_NGINX_DIR="/etc/nginx/conf.d"
+VM_NGINX_DIR="/opt/devplatform/nginx"
 
 mkdir -p "$PKG_DIR/project"
 mkdir -p "$PKG_DIR/nginx"
@@ -34,8 +35,12 @@ cp -a "$PROJECT_DIR/README.md" "$PKG_DIR/project/" 2>/dev/null || true
 cp -a "$PROJECT_DIR/.gitignore" "$PKG_DIR/project/" 2>/dev/null || true
 
 echo "[INFO] export nginx conf"
-sudo cp -a "$NGINX_DIR/dev.rainstorm.space.conf" "$PKG_DIR/nginx/" 2>/dev/null || true
-sudo cp -a "$NGINX_DIR/preview.rainstorm.space.conf" "$PKG_DIR/nginx/" 2>/dev/null || true
+sudo cp -a "$SYSTEM_NGINX_DIR/dev.rainstorm.space.conf" "$PKG_DIR/nginx/" 2>/dev/null || true
+sudo cp -a "$SYSTEM_NGINX_DIR/preview.rainstorm.space.conf" "$PKG_DIR/nginx/" 2>/dev/null || true
+
+cp -a "$VM_NGINX_DIR/blog.dev.conf" "$PKG_DIR/nginx/" 2>/dev/null || true
+cp -a "$VM_NGINX_DIR/blog.prod.conf" "$PKG_DIR/nginx/" 2>/dev/null || true
+cp -a "$VM_NGINX_DIR/blog.conf" "$PKG_DIR/nginx/" 2>/dev/null || true
 
 echo "[INFO] collect docker state"
 docker ps -a --format "table {{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}" > "$PKG_DIR/state/docker-ps.txt" || true
@@ -48,14 +53,17 @@ docker inspect blog-frontend-dev > "$PKG_DIR/state/blog-frontend-dev.inspect.jso
 docker inspect blog-frontend-prod > "$PKG_DIR/state/blog-frontend-prod.inspect.json" 2>/dev/null || true
 docker inspect blog-backend-dev > "$PKG_DIR/state/blog-backend-dev.inspect.json" 2>/dev/null || true
 docker inspect blog-backend-prod > "$PKG_DIR/state/blog-backend-prod.inspect.json" 2>/dev/null || true
+docker inspect blog-nginx > "$PKG_DIR/state/blog-nginx.inspect.json" 2>/dev/null || true
 
 echo "[INFO] export mysql dumps if container exists"
 
-if docker ps -a --format '{{.Names}}' | grep -q "^${MYSQL_CONTAINER_DEV}$"; then
+if docker ps --format '{{.Names}}' | grep -q "^${MYSQL_CONTAINER_DEV}$"; then
   if [ -f "$DEV_ENV_FILE" ]; then
     DEV_MYSQL_ROOT_PASSWORD="$(grep '^MYSQL_ROOT_PASSWORD=' "$DEV_ENV_FILE" | cut -d= -f2- || true)"
-    if [ -n "${DEV_MYSQL_ROOT_PASSWORD:-}" ]; then
-      if docker exec "$MYSQL_CONTAINER_DEV" sh -c "exec mysqldump -uroot -p${DEV_MYSQL_ROOT_PASSWORD} --databases blogdb" \
+    DEV_MYSQL_DATABASE="$(grep '^MYSQL_DATABASE=' "$DEV_ENV_FILE" | cut -d= -f2- || true)"
+
+    if [ -n "${DEV_MYSQL_ROOT_PASSWORD:-}" ] && [ -n "${DEV_MYSQL_DATABASE:-}" ]; then
+      if docker exec "$MYSQL_CONTAINER_DEV" sh -c "exec mysqldump -uroot -p${DEV_MYSQL_ROOT_PASSWORD} --databases ${DEV_MYSQL_DATABASE}" \
         | gzip > "$PKG_DIR/data/blogdb-dev.sql.gz"; then
         echo "[INFO] dev mysql dump exported"
       else
@@ -63,20 +71,22 @@ if docker ps -a --format '{{.Names}}' | grep -q "^${MYSQL_CONTAINER_DEV}$"; then
         rm -f "$PKG_DIR/data/blogdb-dev.sql.gz" 2>/dev/null || true
       fi
     else
-      echo "[WARN] MYSQL_ROOT_PASSWORD not found in $DEV_ENV_FILE"
+      echo "[WARN] MYSQL_ROOT_PASSWORD or MYSQL_DATABASE not found in $DEV_ENV_FILE"
     fi
   else
     echo "[WARN] dev env file not found: $DEV_ENV_FILE"
   fi
 else
-  echo "[WARN] dev mysql container not found: $MYSQL_CONTAINER_DEV"
+  echo "[WARN] dev mysql running container not found: $MYSQL_CONTAINER_DEV"
 fi
 
-if docker ps -a --format '{{.Names}}' | grep -q "^${MYSQL_CONTAINER_PROD}$"; then
+if docker ps --format '{{.Names}}' | grep -q "^${MYSQL_CONTAINER_PROD}$"; then
   if [ -f "$PROD_ENV_FILE" ]; then
     PROD_MYSQL_ROOT_PASSWORD="$(grep '^MYSQL_ROOT_PASSWORD=' "$PROD_ENV_FILE" | cut -d= -f2- || true)"
-    if [ -n "${PROD_MYSQL_ROOT_PASSWORD:-}" ]; then
-      if docker exec "$MYSQL_CONTAINER_PROD" sh -c "exec mysqldump -uroot -p${PROD_MYSQL_ROOT_PASSWORD} --databases blogdb" \
+    PROD_MYSQL_DATABASE="$(grep '^MYSQL_DATABASE=' "$PROD_ENV_FILE" | cut -d= -f2- || true)"
+
+    if [ -n "${PROD_MYSQL_ROOT_PASSWORD:-}" ] && [ -n "${PROD_MYSQL_DATABASE:-}" ]; then
+      if docker exec "$MYSQL_CONTAINER_PROD" sh -c "exec mysqldump -uroot -p${PROD_MYSQL_ROOT_PASSWORD} --databases ${PROD_MYSQL_DATABASE}" \
         | gzip > "$PKG_DIR/data/blogdb-prod.sql.gz"; then
         echo "[INFO] prod mysql dump exported"
       else
@@ -84,13 +94,13 @@ if docker ps -a --format '{{.Names}}' | grep -q "^${MYSQL_CONTAINER_PROD}$"; the
         rm -f "$PKG_DIR/data/blogdb-prod.sql.gz" 2>/dev/null || true
       fi
     else
-      echo "[WARN] MYSQL_ROOT_PASSWORD not found in $PROD_ENV_FILE"
+      echo "[WARN] MYSQL_ROOT_PASSWORD or MYSQL_DATABASE not found in $PROD_ENV_FILE"
     fi
   else
     echo "[WARN] prod env file not found: $PROD_ENV_FILE"
   fi
 else
-  echo "[WARN] prod mysql container not found: $MYSQL_CONTAINER_PROD"
+  echo "[WARN] prod mysql running container not found: $MYSQL_CONTAINER_PROD"
 fi
 
 echo "[INFO] copy uploads"
@@ -101,7 +111,7 @@ else
 fi
 
 echo "[INFO] write migration notes"
-cat > "$PKG_DIR/MIGRATION_README.md" <<'EOF'
+cat > "$PKG_DIR/MIGRATION_README.md" <<'DOC'
 # Blog System Migration Package
 
 ## Included
@@ -137,7 +147,11 @@ cat > "$PKG_DIR/MIGRATION_README.md" <<'EOF'
 - This package does not directly copy docker volumes
 - MySQL is migrated by dump/import, which is safer across machines
 - If only one environment is running, the other environment dump may be absent
-EOF
+- VM nginx config may include:
+  - blog.dev.conf
+  - blog.prod.conf
+  - blog.conf
+DOC
 
 echo "[INFO] create archive"
 tar -czf "$ARCHIVE" -C "$BACKUP_ROOT" "$PKG_NAME"

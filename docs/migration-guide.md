@@ -1,22 +1,23 @@
-📦 Blog System Migration 工具使用说明
+# 📦 Blog System Migration & Env Tools 使用说明
 
-«本文档描述 "package-migration.sh" 与 "restore-migration.sh" 的使用方式，用于实现 Blog System 的跨环境迁移与恢复。»
+> 更新时间：2026-03-31 02:40
 
 ---
 
-🧭 一、整体目标
+# 🧭 一、整体目标
 
-本工具用于实现：
+本工具体系用于实现：
 
 - ✅ 环境迁移（dev / prod）
 - ✅ 数据库迁移（MySQL dump）
 - ✅ 上传文件迁移（uploads）
 - ✅ 项目配置迁移（deploy / scripts / docs）
-- ✅ 运行状态记录（docker state）
+- ✅ 一键恢复运行环境
+- ✅ 一键切换运行环境（dev / prod）
 
 ---
 
-🏗️ 二、迁移流程总览
+# 🏗️ 二、整体流程
 
 源机器
   ↓ package-migration.sh
@@ -24,226 +25,232 @@
   ↓ 传输
 目标机器
   ↓ restore-migration.sh
-完整恢复运行环境
+恢复环境
+  ↓ switch-env.sh
+切换运行环境
 
 ---
 
-📦 三、打包脚本：package-migration.sh
+# 📦 三、打包脚本：package-migration.sh
 
-📍 作用
+## 📍 作用
 
-在源机器上执行，生成完整迁移包：
+在源机器执行，生成迁移包：
 
+```bash
 ./package-migration.sh
+```
 
 ---
 
-📁 生成内容结构
+## 📁 输出结构
 
+```
 blog-system-migration-xxxx/
-├── data/            # MySQL dump
+├── data/
 │   ├── blogdb-dev.sql.gz
 │   └── blogdb-prod.sql.gz
-├── uploads/         # 上传文件
-├── project/         # 项目配置
+├── uploads/
+├── project/
 │   ├── deploy/
 │   ├── scripts/
 │   ├── docs/
 │   └── .github/
-├── nginx/           # nginx 配置
-├── state/           # docker 状态
+├── nginx/
+├── state/
 └── MIGRATION_README.md
+```
 
 ---
 
-⚙️ 打包内容说明
+## ⚙️ 内容说明
 
-项目| 内容
-MySQL| 使用 "mysqldump" 导出
-uploads| 直接复制
-project| deploy + scripts + docs
-nginx| 域名配置
-state| docker 状态快照
-
----
-
-⚠️ 注意事项
-
-- ".env" 文件会被打包（包含敏感信息）
-- 仅在可信环境使用
-- 不要提交到 git
+| 项目 | 内容 |
+|------|------|
+| MySQL | mysqldump 导出 |
+| uploads | 文件复制 |
+| project | 配置 + 脚本 |
+| nginx | 反代配置 |
+| state | docker 状态 |
 
 ---
 
-🚀 四、恢复脚本：restore-migration.sh
+## ⚠️ 注意
 
-📍 作用
-
-在目标机器上执行，从迁移包恢复完整环境：
-
-./restore-migration.sh /path/to/blog-system-migration-xxxx.tar.gz
+- 包含 `.env`（敏感信息）
+- 禁止提交 git
+- 仅用于可信环境
 
 ---
 
-🧩 恢复流程
+# 🚀 四、恢复脚本：restore-migration.sh
 
-1️⃣ 解压迁移包
+## 📍 用法
 
-自动完成
-
----
-
-2️⃣ 恢复项目文件
-
-/opt/devplatform/projects/blog-system
+```bash
+./restore-migration.sh /path/to/migration.tar.gz
+```
 
 ---
 
-3️⃣ 恢复 uploads
+## 🧩 恢复流程
 
-/opt/devplatform/uploads
-
----
-
-4️⃣ 启动 MySQL & Redis
-
-docker compose up -d mysql redis
-
----
-
-5️⃣ 重建数据库
-
-DROP DATABASE IF EXISTS blogdb;
-CREATE DATABASE blogdb;
+1. 解压迁移包
+2. 恢复项目
+3. 恢复 uploads
+4. 启动 MySQL / Redis
+5. 重建数据库
+6. 导入 SQL
+7. 启动全部服务
+8. 健康检查
 
 ---
 
-6️⃣ 导入 SQL
+## 🎯 成功标准
 
-gzip -cd blogdb-*.sql.gz | mysql
-
----
-
-7️⃣ 启动完整服务
-
-docker compose up -d --build
+- DB 有数据
+- backend health = UP
+- frontend 可访问
+- 图片加载正常
 
 ---
 
-8️⃣ 健康检查
+# 🔁 五、环境切换脚本：switch-env.sh
 
-/actuator/health
+## 📍 用法
 
----
-
-🎯 五、成功判定标准
-
-必须同时满足：
-
-项目| 标准
-DB| 有数据
-Backend| health=UP
-Frontend| 可访问
-Uploads| 图片正常加载
+```bash
+bash scripts/switch-env.sh dev
+bash scripts/switch-env.sh prod
+bash scripts/switch-env.sh status
+```
 
 ---
 
-⚠️ 六、常见问题
+## 🧠 功能说明
+
+| 命令 | 作用 |
+|------|------|
+| dev | 启动 dev + 切 nginx |
+| prod | 启动 prod + 切 nginx |
+| status | 查看状态 |
 
 ---
 
-❌ 1. 502 Bad Gateway
+## 🔄 执行逻辑
 
-原因：
+### dev
 
-- nginx → upstream 不通
+1. 停 prod
+2. 启动 dev
+3. 等 backend ready
+4. 等 frontend ready
+5. 切 nginx
+6. reload nginx
 
-排查：
+---
 
+### prod
+
+1. 停 dev
+2. 启动 prod
+3. 等 backend ready
+4. 切 nginx
+5. reload nginx
+
+---
+
+# 🌐 六、nginx 配置说明
+
+目录：
+
+```
+/opt/devplatform/nginx/
+```
+
+文件：
+
+- blog.dev.conf
+- blog.prod.conf
+- blog.conf（当前生效）
+
+---
+
+## 🔁 切换方式
+
+```bash
+cp blog.dev.conf blog.conf
+docker exec blog-nginx nginx -s reload
+```
+
+---
+
+# ⚠️ 七、常见问题
+
+## ❌ Docker 拉镜像失败
+
+原因：网络问题
+
+解决：
+
+```bash
+docker pull maven:3.9.9-eclipse-temurin-21
+docker pull node:22-bookworm
+```
+
+---
+
+## ❌ 502 Bad Gateway
+
+```bash
 docker logs blog-nginx
 docker logs blog-backend-dev
+```
 
 ---
 
-❌ 2. 数据为空
+## ❌ 数据为空
 
-原因：
-
-- SQL 未导入
-- 导入失败
-
-排查：
-
+```sql
 SELECT COUNT(*) FROM post;
+```
 
 ---
 
-❌ 3. 表已存在错误
+## ❌ 图片不显示
 
-解决：
-
-DROP DATABASE blogdb;
-CREATE DATABASE blogdb;
-
----
-
-❌ 4. 图片不显示
-
-原因：
-
-- uploads 未恢复
-- 权限问题
-
-解决：
-
+```bash
 chown -R 1000:1000 /opt/devplatform/uploads
+```
 
 ---
 
-🔐 七、安全注意事项
+# 🔐 八、安全
 
-- 包含数据库数据
-- 包含 env 密钥
-- 禁止上传公网
-- 建议使用私有存储
-
----
-
-🧠 八、设计原则（核心）
-
-本迁移系统遵循：
-
-1️⃣ 数据与容器解耦
-
-→ 使用 SQL dump 而非 volume copy
-
-2️⃣ 可重复恢复
-
-→ 任意机器可还原
-
-3️⃣ 环境隔离
-
-→ dev / prod 独立
-
-4️⃣ 可观测性
-
-→ docker state + health check
+- 包含数据库
+- 包含 env
+- 禁止公网传播
 
 ---
 
-🚀 九、后续演进方向
+# 🧠 九、设计原则
 
-- [ ] 一键远程迁移（scp + restore）
-- [ ] CI/CD 自动迁移
-- [ ] 灰度环境复制
-- [ ] 数据版本校验（checksum）
+1. 数据与容器解耦
+2. 可重复恢复
+3. 环境隔离
+4. 可观测性
 
 ---
 
-📌 十、总结
+# 🚀 十、总结
 
-本工具实现了：
+👉 当前系统已实现：
 
-👉 从“能跑” → “可迁移” → “可复制”的工程升级
+- 可迁移
+- 可恢复
+- 可切换
+- 可验证
 
-是系统从开发阶段走向工程化的重要一步。
+---
+
+> 这标志着系统已进入工程化阶段（DevOps 基础能力）
