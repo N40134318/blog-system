@@ -3,7 +3,7 @@
 > 工程化个人博客系统（持续迭代中）
 
 一个基于 **Nuxt3 + Spring Boot + MySQL + Redis + Docker**
-的全栈博客系统， 支持 Dev / Prod
+的全栈博客系统，支持 Dev / Prod
 环境隔离、自动部署、数据迁移与基础运维能力。
 
 ------------------------------------------------------------------------
@@ -53,8 +53,6 @@ cd backend
 ./mvnw spring-boot:run
 ```
 
-------------------------------------------------------------------------
-
 ### 2️⃣ 启动 Frontend
 
 ``` bash
@@ -62,8 +60,6 @@ cd frontend
 pnpm install
 pnpm dev
 ```
-
-------------------------------------------------------------------------
 
 ### 3️⃣ 访问
 
@@ -80,20 +76,14 @@ pnpm dev
 docker compose -f deploy/compose.dev.yml up -d --build
 ```
 
-访问：
-
 -   Frontend: http://127.0.0.1:3001
 -   Backend: http://127.0.0.1:8081
-
-------------------------------------------------------------------------
 
 ### Prod 环境
 
 ``` bash
 docker compose --env-file deploy/.env.prod -f deploy/compose.prod.yml up -d --build
 ```
-
-访问：
 
 -   Frontend: http://127.0.0.1:3000
 -   Backend: http://127.0.0.1:8080
@@ -108,11 +98,9 @@ docker compose --env-file deploy/.env.prod -f deploy/compose.prod.yml up -d --bu
 -   自动触发 `deploy-dev.yml`
 -   若 Prod 正在运行 → 自动跳过
 
-------------------------------------------------------------------------
-
 ### Prod（手动）
 
-在 GitHub Actions 中手动执行：
+GitHub Actions 手动执行：
 
     Deploy Prod
 
@@ -150,8 +138,6 @@ docker compose --env-file deploy/.env.prod -f deploy/compose.prod.yml up -d --bu
 scripts/package-migration.sh
 ```
 
-------------------------------------------------------------------------
-
 ### 恢复
 
 ``` bash
@@ -179,8 +165,6 @@ scripts/restore-migration.sh <archive>
 git fetch --tags
 git reset --hard <tag>
 ```
-
-------------------------------------------------------------------------
 
 ### 回滚容器
 
@@ -220,6 +204,15 @@ docker compose --env-file deploy/.env.prod -f deploy/compose.prod.yml up -d --bu
 -   监控与告警（Prometheus / Grafana）
 -   多环境（staging / preview）
 -   自动备份与恢复策略
+
+------------------------------------------------------------------------
+
+## 📚 Documentation
+
+-   [📦 Architecture Overview](docs/architecture-overview.md)
+-   [🔁 Migration Guide](docs/migration-guide.md)
+-   [🛠️ Runbook](docs/runbook.md)
+-   [📘 Stage Summary](docs/stage-summary.md)
 
 ------------------------------------------------------------------------
 
