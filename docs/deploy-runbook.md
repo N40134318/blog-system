@@ -88,6 +88,39 @@ docker compose -f deploy/compose.dev.yml logs -f backend
 docker compose -f deploy/compose.dev.yml logs -f frontend
 ```
 
+### 本地 VM Dev 环境变量
+
+如果 Dev 环境运行在本地 VM，并且需要从宿主机浏览器访问：
+
+```bash
+cat >> deploy/.env.dev <<'EOF'
+BLOG_DEV_BIND_HOST=0.0.0.0
+NUXT_PUBLIC_API_BASE=http://<vm-ip>:8081
+APP_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001,http://<vm-ip>:3001
+EOF
+```
+
+说明：
+
+- `BLOG_DEV_BIND_HOST=0.0.0.0`：让前端 `3001` 和后端 `8081` 暴露给宿主机。
+- `NUXT_PUBLIC_API_BASE`：让浏览器中的前端请求 VM 后端。
+- `APP_CORS_ALLOWED_ORIGINS`：让 Spring Boot 放行前端来源。
+- MySQL 和 Redis 仍默认只绑定 `127.0.0.1`，不对宿主机开放。
+
+启动：
+
+```bash
+docker compose -f deploy/compose.dev.yml up -d --build
+```
+
+如果机器只有旧版 Compose v1，则命令是：
+
+```bash
+docker-compose -f deploy/compose.dev.yml up -d --build
+```
+
+但 Compose v1 与新 Docker 版本存在兼容风险，优先安装 Compose v2。
+
 ---
 
 ## 5. 健康检查
@@ -102,6 +135,14 @@ curl http://127.0.0.1:8081/actuator/health
 
 ```bash
 curl -I http://127.0.0.1:3001
+```
+
+### VM 宿主机访问检查
+
+```bash
+curl -I http://<vm-ip>:3001
+curl http://<vm-ip>:8081/actuator/health
+curl 'http://<vm-ip>:8081/api/posts?page=0&size=6&keyword=&sort=latest'
 ```
 
 ---

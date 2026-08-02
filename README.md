@@ -79,6 +79,23 @@ docker compose -f deploy/compose.dev.yml up -d --build
 -   Frontend: http://127.0.0.1:3001
 -   Backend: http://127.0.0.1:8081
 
+如果在本地 VM 中运行，并希望宿主机浏览器访问 VM 内服务，可以在 `deploy/.env.dev`
+中增加：
+
+``` env
+BLOG_DEV_BIND_HOST=0.0.0.0
+NUXT_PUBLIC_API_BASE=http://<vm-ip>:8081
+APP_CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:3001,http://127.0.0.1:3000,http://127.0.0.1:3001,http://<vm-ip>:3001
+```
+
+其中 `<vm-ip>` 替换为 VM 的局域网 IP。这样前端容器会读取
+`NUXT_PUBLIC_API_BASE`，后端会按 `APP_CORS_ALLOWED_ORIGINS`
+放行浏览器跨端口请求。
+
+> 推荐使用 Docker Compose v2 的 `docker compose`。Ubuntu 源中的
+> `docker-compose` v1 在较新 Docker 版本下可能出现 `KeyError:
+> 'ContainerConfig'`，详见 `docs/ops-troubleshooting.md`。
+
 ### Prod 环境
 
 ``` bash
