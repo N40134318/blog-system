@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 if [ $# -lt 1 ]; then
   echo "Usage: $0 /path/to/blog-system-migration-xxxx.tar.gz"
@@ -7,9 +8,13 @@ if [ $# -lt 1 ]; then
 fi
 
 ARCHIVE_PATH="$1"
-PROJECT_DIR="/opt/devplatform/projects/blog-system"
-BACKUP_ROOT="/opt/devplatform/backups/migration/restore-tmp"
-UPLOADS_DIR="/opt/devplatform/uploads"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="${PROJECT_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+BACKUP_ROOT="${BACKUP_ROOT:-/opt/devplatform/backups/migration/restore-tmp}"
+DB_BACKUP_ROOT="${DB_BACKUP_ROOT:-/opt/devplatform/backups/migration/database}"
+UPLOADS_BACKUP_ROOT="${UPLOADS_BACKUP_ROOT:-/opt/devplatform/backups/migration/uploads}"
+UPLOADS_DIR="${UPLOADS_DIR:-/opt/devplatform/uploads}"
+RESTORE_PROJECT_FILES="${RESTORE_PROJECT_FILES:-1}"
 TMP_PROJECT_RESTORE="/tmp/blog-system-project-restore"
 EXTRACT_DIR=""
 
@@ -49,17 +54,35 @@ echo "[INFO] extracted dir: $EXTRACT_DIR"
 echo "[INFO] ensure project dir exists"
 mkdir -p "$PROJECT_DIR"
 
-echo "[INFO] restore project files except current restore script"
-cp -a "$EXTRACT_DIR/project/." "$TMP_PROJECT_RESTORE/" 2>/dev/null || true
-rm -f "$TMP_PROJECT_RESTORE/scripts/restore-migration.sh" 2>/dev/null || true
-cp -a "$TMP_PROJECT_RESTORE/." "$PROJECT_DIR/" 2>/dev/null || true
+if [ "$RESTORE_PROJECT_FILES" = "1" ]; then
+  echo "[INFO] restore project files except current restore script"
+  cp -a "$EXTRACT_DIR/project/." "$TMP_PROJECT_RESTORE/" 2>/dev/null || true
+  rm -f "$TMP_PROJECT_RESTORE/scripts/restore-migration.sh" 2>/dev/null || true
+  cp -a "$TMP_PROJECT_RESTORE/." "$PROJECT_DIR/" 2>/dev/null || true
+else
+  echo "[INFO] skip project files; keep current code and environment configuration"
+fi
+
+echo "[INFO] back up current uploads"
+mkdir -p "$UPLOADS_BACKUP_ROOT"
+UPLOADS_BACKUP="$UPLOADS_BACKUP_ROOT/uploads-before-restore-$(date +%Y%m%d-%H%M%S).tar.gz"
+tar -czf "$UPLOADS_BACKUP" -C "$UPLOADS_DIR" .
+chmod 600 "$UPLOADS_BACKUP"
+echo "[INFO] current uploads backup: $UPLOADS_BACKUP"
 
 echo "[INFO] restore uploads"
 cp -a "$EXTRACT_DIR/uploads/." "$UPLOADS_DIR/" 2>/dev/null || true
 
 echo "[INFO] check docker availability"
 docker version >/dev/null
-docker compose version >/dev/null
+if docker compose version >/dev/null 2>&1; then
+  compose() { docker compose "$@"; }
+elif command -v docker-compose >/dev/null 2>&1; then
+  compose() { docker-compose "$@"; }
+else
+  echo "[ERROR] Docker Compose is not available"
+  exit 1
+fi
 
 echo "[INFO] choose target environment"
 echo "1) dev"
@@ -161,10 +184,10 @@ if [ "$TARGET_ENV" = "dev" ] && [ ! -f "$SQL_DUMP" ]; then
 fi
 
 echo "[INFO] stop target environment first"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down || true
+compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" down || true
 
 echo "[INFO] start mysql and redis first"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d mysql redis
+compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d mysql redis
 
 echo "[INFO] wait for mysql container"
 for i in {1..60}; do
@@ -193,6 +216,17 @@ if ! docker exec "$MYSQL_CONTAINER" mysqladmin ping -h 127.0.0.1 -uroot -p"$MYSQ
   exit 1
 fi
 
+echo "[INFO] back up current target database"
+mkdir -p "$DB_BACKUP_ROOT"
+DB_BACKUP="$DB_BACKUP_ROOT/${MYSQL_DATABASE}-${TARGET_ENV}-before-restore-$(date +%Y%m%d-%H%M%S).sql.gz"
+docker exec "$MYSQL_CONTAINER" mysqldump \
+  -uroot -p"$MYSQL_ROOT_PASSWORD" \
+  --single-transaction --routines --triggers --events --databases "$MYSQL_DATABASE" \
+  | gzip > "$DB_BACKUP"
+chmod 600 "$DB_BACKUP"
+gzip -t "$DB_BACKUP"
+echo "[INFO] current database backup: $DB_BACKUP"
+
 echo "[INFO] recreate target database"
 docker exec -i "$MYSQL_CONTAINER" mysql -uroot -p"$MYSQL_ROOT_PASSWORD" <<SQL
 DROP DATABASE IF EXISTS \`${MYSQL_DATABASE}\`;
@@ -201,8 +235,19 @@ SQL
 
 if [ -f "$SQL_DUMP" ]; then
   echo "[INFO] import sql dump: $SQL_DUMP"
-  gzip -cd "$SQL_DUMP" | docker exec -i "$MYSQL_CONTAINER" mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"
-  echo "[INFO] sql import done"
+  if gzip -cd "$SQL_DUMP" | docker exec -i "$MYSQL_CONTAINER" mysql -uroot -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE"; then
+    echo "[INFO] sql import done"
+  else
+    echo "[ERROR] sql import failed; restoring the pre-restore database backup"
+    docker exec -i "$MYSQL_CONTAINER" mysql -uroot -p"$MYSQL_ROOT_PASSWORD" <<SQL
+DROP DATABASE IF EXISTS \`${MYSQL_DATABASE}\`;
+CREATE DATABASE \`${MYSQL_DATABASE}\`;
+SQL
+    gzip -cd "$DB_BACKUP" | docker exec -i "$MYSQL_CONTAINER" mysql -uroot -p"$MYSQL_ROOT_PASSWORD"
+    compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build || true
+    echo "[ERROR] previous database restored from: $DB_BACKUP"
+    exit 1
+  fi
 else
   echo "[WARN] sql dump not found: $SQL_DUMP"
   echo "[WARN] continue without database import"
@@ -220,7 +265,7 @@ SQL
 fi
 
 echo "[INFO] start full application stack"
-docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build
+compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" up -d --build
 
 echo "[INFO] wait for backend health"
 for i in {1..90}; do
