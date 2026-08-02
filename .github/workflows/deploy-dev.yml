@@ -10,21 +10,35 @@ jobs:
   deploy-dev:
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy Dev
-        uses: appleboy/ssh-action@v1.0.3
+      - name: Deploy Dev through VPS
+        uses: appleboy/ssh-action@v1.2.2
         with:
-          host: ${{ secrets.SERVER_HOST }}
-          username: ${{ secrets.SERVER_USER }}
-          port: ${{ secrets.SERVER_PORT }}
+          host: ${{ secrets.VM_HOST }}
+          username: ${{ secrets.VM_USER }}
+          port: ${{ secrets.VM_PORT }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          fingerprint: ${{ secrets.VM_FINGERPRINT }}
+          proxy_host: ${{ secrets.VPS_HOST }}
+          proxy_username: ${{ secrets.VPS_USER }}
+          proxy_port: ${{ secrets.VPS_PORT }}
+          proxy_key: ${{ secrets.SERVER_SSH_KEY }}
+          proxy_fingerprint: ${{ secrets.VPS_FINGERPRINT }}
           script: |
             set -e
 
-            PROJECT_DIR=/opt/devplatform/projects/blog-system
+            PROJECT_DIR=/home/character/blog-system
             DEV_COMPOSE=deploy/compose.dev.yml
             PROD_COMPOSE=deploy/compose.prod.yml
             DEV_ENV=deploy/.env.dev
             PROD_ENV=deploy/.env.prod
+
+            compose() {
+              if docker compose version >/dev/null 2>&1; then
+                docker compose "$@"
+              else
+                docker-compose "$@"
+              fi
+            }
 
             echo "[INFO] enter project dir"
             cd "$PROJECT_DIR"
@@ -44,10 +58,13 @@ jobs:
             fi
 
             echo "[INFO] stop prod environment if leftover containers exist"
-            docker compose --env-file "$PROD_ENV" -f "$PROD_COMPOSE" down || true
+            compose --env-file "$PROD_ENV" -f "$PROD_COMPOSE" down || true
+
+            echo "[INFO] stop current dev containers before rebuilding"
+            compose --env-file "$DEV_ENV" -f "$DEV_COMPOSE" down
 
             echo "[INFO] rebuild and start dev containers"
-            docker compose --env-file "$DEV_ENV" -f "$DEV_COMPOSE" up -d --build
+            compose --env-file "$DEV_ENV" -f "$DEV_COMPOSE" up -d --build
 
             echo "[INFO] waiting dev backend health"
             for i in {1..40}; do

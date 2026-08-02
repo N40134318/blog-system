@@ -43,16 +43,17 @@ GitHub Actions workflow：
 
 流程：
 
-1. GitHub Actions SSH 登录服务器
-2. 进入 `/opt/devplatform/projects/blog-system`
-3. 拉取最新代码：
+1. GitHub Actions 通过公网 SSH 登录 VPS 跳板机
+2. VPS 通过 Tailscale 地址转发 SSH 到 VM
+3. 进入 `/home/character/blog-system`
+4. 拉取最新代码：
 
 ```bash
    git fetch origin main
    git reset --hard origin/main
 ```
 
-4. 启动 Dev 环境：
+5. 启动 Dev 环境：
 
     ```bash
     docker compose -f deploy/compose.dev.yml up -d --build
@@ -66,7 +67,7 @@ GitHub Actions workflow：
 ### 查看 Dev 容器
 
 ```bash
-cd /opt/devplatform/projects/blog-system
+cd /home/character/blog-system
 docker compose -f deploy/compose.dev.yml ps
 ```
 
@@ -168,7 +169,7 @@ curl 'http://<vm-ip>:8081/api/posts?page=0&size=6&keyword=&sort=latest'
 ## 7. Prod 手动发布（当前策略）
 
 ```bash
-cd /opt/devplatform/projects/blog-system
+cd /home/character/blog-system
 git pull origin main
 
 docker compose \
@@ -183,10 +184,15 @@ docker compose \
 
 Dev workflow 需要：
 
-- `SERVER_HOST`
-- `SERVER_PORT`
-- `SERVER_USER`
 - `SERVER_SSH_KEY`
+- `VM_HOST`
+- `VM_USER`
+- `VM_PORT`
+- `VM_FINGERPRINT`
+- `VPS_HOST`
+- `VPS_USER`
+- `VPS_PORT`
+- `VPS_FINGERPRINT`
 
 ---
 
@@ -206,7 +212,7 @@ Dev workflow 需要：
 ## 10. 权限要求
 
 ```bash
-chown -R 1000:1000 /opt/devplatform/projects/blog-system
+chown -R character:character /home/character/blog-system
 ```
 
 说明：
@@ -237,3 +243,42 @@ chown -R 1000:1000 /opt/devplatform/projects/blog-system
 
 ## 数据恢复
 见：migration-guide.md
+
+## 本地 VM 的 GitHub Actions 部署链路
+
+本地 VM 没有公网可达地址时，GitHub 托管 Runner 无法直接访问
+`192.168.x.x` 或 Tailscale 地址。Dev 部署使用常驻 VPS 作为 SSH 跳板：
+
+```text
+GitHub Actions -> VPS public SSH -> VPS Tailscale -> ubuntu-vm -> Docker Compose
+```
+
+VM 当前项目目录：
+
+```text
+/home/character/blog-system
+```
+
+GitHub Actions Secret：
+
+- `SERVER_SSH_KEY`：仅用于该 VM 的 SSH 私钥
+
+部署目标和跳板参数全部保存在 GitHub Actions Secrets 中，公开仓库不记录
+服务器地址、登录用户或主机指纹。
+
+- `VM_*`：最终部署目标
+- `VPS_*`：公网 SSH 跳板
+- VPS 与 VM 使用同一把专用 Ed25519 公钥授权
+- workflow 固定校验 VPS 和 VM 的 Ed25519 主机指纹
+
+VM 连通性检查：
+
+```bash
+tailscale status
+tailscale ip -4
+sudo systemctl status ssh --no-pager
+```
+
+部署 workflow 同时兼容 Compose v2 的 `docker compose` 和 Compose v1
+的 `docker-compose`。Compose v1 与较新 Docker Engine 组合时，重建前先
+`down` 当前 Dev 容器；该操作不会删除数据卷。
