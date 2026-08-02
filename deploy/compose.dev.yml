@@ -31,6 +31,7 @@ services:
     volumes:
       - ../backend:/workspace
       - /opt/devplatform/uploads:/app/uploads
+      - blog_backend_m2_dev:/root/.m2
     ports:
       - "${BLOG_DEV_BIND_HOST:-127.0.0.1}:8081:8080"
     env_file:
@@ -64,5 +65,6 @@ services:
 
 volumes:
   blog_mysql_data_dev:
+  blog_backend_m2_dev:
   blog_frontend_node_modules_dev:
   blog_frontend_nuxt_dev:

@@ -23,6 +23,7 @@ jobs:
           proxy_port: ${{ secrets.VPS_PORT }}
           proxy_key: ${{ secrets.SERVER_SSH_KEY }}
           proxy_fingerprint: ${{ secrets.VPS_FINGERPRINT }}
+          command_timeout: 20m
           script: |
             set -e
 
@@ -58,7 +59,11 @@ jobs:
             fi
 
             echo "[INFO] stop prod environment if leftover containers exist"
-            compose --env-file "$PROD_ENV" -f "$PROD_COMPOSE" down || true
+            if [ -f "$PROD_ENV" ]; then
+              compose --env-file "$PROD_ENV" -f "$PROD_COMPOSE" down || true
+            else
+              echo "[INFO] prod env file is absent, skip prod cleanup"
+            fi
 
             echo "[INFO] stop current dev containers before rebuilding"
             compose --env-file "$DEV_ENV" -f "$DEV_COMPOSE" down
@@ -67,16 +72,16 @@ jobs:
             compose --env-file "$DEV_ENV" -f "$DEV_COMPOSE" up -d --build
 
             echo "[INFO] waiting dev backend health"
-            for i in {1..40}; do
-              if curl -fsS http://127.0.0.1:8081/actuator/health >/dev/null; then
+            for i in {1..300}; do
+              if curl -fsS http://127.0.0.1:8081/actuator/health >/dev/null 2>&1; then
                 break
               fi
               sleep 2
             done
 
             echo "[INFO] waiting dev frontend"
-            for i in {1..40}; do
-              if curl -fsSI http://127.0.0.1:3001 >/dev/null; then
+            for i in {1..90}; do
+              if curl -fsSI http://127.0.0.1:3001 >/dev/null 2>&1; then
                 break
               fi
               sleep 2
